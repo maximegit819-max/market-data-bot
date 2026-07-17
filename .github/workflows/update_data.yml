@@ -2,8 +2,8 @@ name: Mise à jour des données
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Tous les jours à minuit
-  workflow_dispatch: # Permet de lancer le script manuellement depuis GitHub
+    - cron: '17 23 * * *' 
+  workflow_dispatch: 
 
 jobs:
   update:
