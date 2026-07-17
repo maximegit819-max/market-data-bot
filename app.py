@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-st.set_page_config(page_title="Dashboard Structuration", layout="wide", page_icon="📈")
+st.set_page_config(page_title="Dashboard Structuration", layout="wide")
 
 st.title("Screener Quantitatif & Analyse")
 st.markdown("Données de marché en direct de **Supabase**.")
@@ -57,20 +57,22 @@ def load_stock_history(ticker):
 
 @st.cache_data(ttl=3600)
 def load_correlations(ticker):
-    """Récupère le Top 10 des actions les plus corrélées"""
+    """Récupère le Top 5 et Flop 5 des actions corrélées"""
     query = f"""
     SELECT actif_2 AS "Ticker", nom_actif_2 AS "Entreprise", corr_1y AS "Corrélation (1 An)"
     FROM vue_correlation_standard WHERE actif_1 = '{ticker}' AND corr_1y IS NOT NULL
     UNION
     SELECT actif_1 AS "Ticker", nom_actif_1 AS "Entreprise", corr_1y AS "Corrélation (1 An)"
     FROM vue_correlation_standard WHERE actif_2 = '{ticker}' AND corr_1y IS NOT NULL
-    ORDER BY "Corrélation (1 An)" DESC
-    LIMIT 10;
     """
     with engine.connect() as conn:
-        return pd.read_sql(text(query), conn)
+        df = pd.read_sql(text(query), conn)
+        # Tri et sélection via Pandas
+        top_5 = df.nlargest(5, 'Corrélation (1 An)')
+        bottom_5 = df.nsmallest(5, 'Corrélation (1 An)')
+        return top_5, bottom_5
 
-tab1, tab2 = st.tabs(["📊 Screener Global Market", "🔍 Fiche Analyse par Action"])
+tab1, tab2 = st.tabs(["Screener Global Market", "Fiche Analyse par Action"])
 
 with tab1:
     with st.spinner("Récupération des données marché..."):
@@ -99,24 +101,34 @@ with tab1:
     )
 
 with tab2:
-    liste_tickers = df_screener['Ticker'].tolist()
-    ticker_choisi = st.selectbox("Sélectionnez un sous-jacent à analyser :", liste_tickers)
+    liste_noms = df_screener['Sous-Jacent'].tolist()
+    nom_choisi = st.selectbox("Sélectionnez une entreprise à analyser :", liste_noms)
     
-    if ticker_choisi:
+    if nom_choisi:
+        # On retrouve le ticker correspondant au nom choisi
+        ticker_choisi = df_screener[df_screener['Sous-Jacent'] == nom_choisi]['Ticker'].iloc[0]
+        
         st.divider()
         col_gauche, col_droite = st.columns([2, 1]) 
         
         with col_gauche:
-            st.subheader(f"📈 Historique des prix - {ticker_choisi}")
+            st.subheader(f"Historique des prix - {nom_choisi}")
             df_historique = load_stock_history(ticker_choisi)
             st.line_chart(df_historique['prix_cloture'], color="#0b57d0", height=400)
             
         with col_droite:
-            st.subheader("🔗 Top 10 Corrélations (1Y)")
-            st.markdown("Idéal pour trouver un *Worst-Of*.")
-            df_corr = load_correlations(ticker_choisi)
+            df_top5, df_bottom5 = load_correlations(ticker_choisi)
+            
+            st.subheader("Top 5 Corrélés (1Y)")
             st.dataframe(
-                df_corr,
+                df_top5,
                 column_config={"Corrélation (1 An)": st.column_config.NumberColumn(format="%.2f")},
-                use_container_width=True, hide_index=True, height=400
+                use_container_width=True, hide_index=True
+            )
+            
+            st.subheader("Top 5 Décorrélés (1Y)")
+            st.dataframe(
+                df_bottom5,
+                column_config={"Corrélation (1 An)": st.column_config.NumberColumn(format="%.2f")},
+                use_container_width=True, hide_index=True
             )
