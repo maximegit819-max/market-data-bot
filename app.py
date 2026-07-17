@@ -66,6 +66,17 @@ def load_stock_history(ticker):
         return df
 
 @st.cache_data(ttl=3600)
+def load_vol_term_structure(ticker):
+    """Récupère les différents horizons de volatilité pour l'action"""
+    query = f"""
+    SELECT vol_1m_pct, vol_6m_pct, vol_1y_pct, vol_5y_pct
+    FROM vue_volatilite_standard
+    WHERE ticker_yahoo = '{ticker}'
+    """
+    with engine.connect() as conn:
+        return pd.read_sql(text(query), conn)
+
+@st.cache_data(ttl=3600)
 def load_correlations(ticker):
     """Récupère le Top 5 et Flop 5 avec la volatilité associée"""
     query = f"""
@@ -129,7 +140,7 @@ with tab2:
         
         st.divider()
         
-        # --- NOUVEAU : Bandeau de Synthèse (KPIs) ---
+        # Bandeau de Synthèse (KPIs)
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         kpi1.metric("Prix Actuel", f"{infos_action['Prix Clôture']:.2f}", f"{infos_action['Perf 1J (%)']:.2f}%")
         kpi2.metric("Performance 1Y", f"{infos_action['Perf 1Y (%)']:.2f}%")
@@ -137,19 +148,35 @@ with tab2:
         kpi4.metric("Drawdown 1Y", f"{infos_action['Drawdown 1Y (%)']:.2f}%")
         
         st.divider()
-        # --------------------------------------------
 
         col_gauche, col_droite = st.columns([2, 1]) 
         
         with col_gauche:
             st.subheader("Historique et Tendance")
             df_historique = load_stock_history(ticker_choisi)
-            
-            # --- NOUVEAU : Graphique avec les Moyennes Mobiles (et couleurs personnalisées) ---
-            # Bleu pour le prix, Orange pour la SMA 6M, Vert pour la SMA 1Y
             st.line_chart(df_historique, color=["#0b57d0", "#f9ab00", "#146c2e"], height=400)
             
         with col_droite:
+            # --- NOUVEAU : Histogramme de Term Structure de Volatilité ---
+            st.subheader("Term Structure (Volatilité)")
+            df_vol = load_vol_term_structure(ticker_choisi)
+            
+            if not df_vol.empty:
+                # On formate les données pour l'histogramme Streamlit
+                vol_data = pd.DataFrame({
+                    "Horizon": ["1 Mois", "6 Mois", "1 An", "5 Ans"],
+                    "Volatilité (%)": [
+                        df_vol.iloc[0]['vol_1m_pct'],
+                        df_vol.iloc[0]['vol_6m_pct'],
+                        df_vol.iloc[0]['vol_1y_pct'],
+                        df_vol.iloc[0]['vol_5y_pct']
+                    ]
+                })
+                # On met "Horizon" en index pour qu'il serve d'axe X
+                st.bar_chart(vol_data.set_index("Horizon"), color="#681da8", height=200)
+            
+            st.divider()
+            
             df_top5, df_bottom5 = load_correlations(ticker_choisi)
             
             st.subheader("Top 5 Corrélés (1Y)")
