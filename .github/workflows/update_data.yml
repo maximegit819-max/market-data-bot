@@ -23,4 +23,4 @@ jobs:
       - name: Lancer le script
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: python update_yahoo.py
+        run: python yahoo_update.py
