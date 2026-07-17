@@ -2,13 +2,11 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-# 1. Configuration de la page
 st.set_page_config(page_title="Dashboard Structuration", layout="wide", page_icon="📈")
 
 st.title("Screener Quantitatif & Analyse")
 st.markdown("Données de marché en direct de **Supabase**.")
 
-# 2. Connexion à la base de données
 @st.cache_resource
 def init_connection():
     db_url = st.secrets["SUPABASE_DB_URL"]
@@ -18,7 +16,6 @@ def init_connection():
 
 engine = init_connection()
 
-# 3. Chargement des données globales (Onglet 1)
 @st.cache_data(ttl=3600) 
 def load_screener_data():
     query = """
@@ -49,8 +46,6 @@ def load_screener_data():
     with engine.connect() as conn:
         return pd.read_sql(text(query), conn)
 
-# --- FONCTIONS POUR L'ONGLET 2 ---
-
 @st.cache_data(ttl=3600)
 def load_stock_history(ticker):
     """Récupère l'historique des prix pour le graphique"""
@@ -75,12 +70,8 @@ def load_correlations(ticker):
     with engine.connect() as conn:
         return pd.read_sql(text(query), conn)
 
-# 4. CREATION DES ONGLETS DANS L'INTERFACE
 tab1, tab2 = st.tabs(["📊 Screener Global Market", "🔍 Fiche Analyse par Action"])
 
-# ==========================================
-# ONGLET 1 : LE SCREENER 
-# ==========================================
 with tab1:
     with st.spinner("Récupération des données marché..."):
         df_screener = load_screener_data()
@@ -107,9 +98,6 @@ with tab1:
         use_container_width=True, hide_index=True, height=500
     )
 
-# ==========================================
-# ONGLET 2 : LA FICHE ACTION
-# ==========================================
 with tab2:
     liste_tickers = df_screener['Ticker'].tolist()
     ticker_choisi = st.selectbox("Sélectionnez un sous-jacent à analyser :", liste_tickers)
@@ -131,4 +119,4 @@ with tab2:
                 df_corr,
                 column_config={"Corrélation (1 An)": st.column_config.NumberColumn(format="%.2f")},
                 use_container_width=True, hide_index=True, height=400
-            )herche.")
+            )
