@@ -180,33 +180,41 @@ with tab2:
                     vol_data, 
                     x="Horizon", 
                     y="Volatilité (%)",
-                    text="Volatilité (%)", # Affiche le pourcentage sur les barres
-                    color_discrete_sequence=["#681da8"]
+                    text="Volatilité (%)",
+                    color_discrete_sequence=["#1e3a8a"] # Un bleu "Navy" professionnel et sobre
                 )
                 
                 # Forçage de l'ordre chronologique exact et nettoyage du design
                 fig.update_layout(
-                    xaxis={'categoryorder':'array', 'categoryarray': horizons},
+                    xaxis={'categoryorder':'array', 'categoryarray': horizons, 'showgrid': False, 'zeroline': False},
+                    yaxis={'showticklabels': False, 'showgrid': False, 'zeroline': False}, # On cache l'axe Y pour un look minimaliste
                     xaxis_title=None,
                     yaxis_title=None,
-                    margin=dict(l=0, r=0, t=20, b=0),
+                    margin=dict(l=0, r=0, t=30, b=0), # Marge haute augmentée pour que le texte respire
                     height=250,
                     plot_bgcolor="rgba(0,0,0,0)", # Fond transparent
-                    paper_bgcolor="rgba(0,0,0,0)"
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    bargap=0.5 # C'est ici qu'on affine considérablement la largeur des barres !
                 )
+                
                 fig.update_traces(
-                    texttemplate='%{text:.1f}%', 
+                    texttemplate='<b>%{text:.1f}%</b>', 
                     textposition='outside',
-                    marker_line_color="#4a157a", # Bordure légèrement plus foncée
-                    marker_line_width=1
+                    textfont=dict(size=14, color="#334155"), # Texte plus grand et gris ardoise
+                    marker_line_width=0, # Design "flat" sans bordure
+                    cliponaxis=False # Empêche que le texte de la barre la plus haute soit coupé
                 )
                 
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-            
-            st.divider()
-            
-            df_top5, df_bottom5 = load_correlations(ticker_choisi)
-            
+        
+        # On sort des colonnes "gauche/droite" pour prendre toute la largeur de l'écran
+        st.divider()
+        
+        df_top5, df_bottom5 = load_correlations(ticker_choisi)
+        
+        col_corr, col_decorr = st.columns(2)
+        
+        with col_corr:
             st.subheader("Top 5 Corrélés (1Y)")
             st.dataframe(
                 df_top5,
@@ -217,6 +225,7 @@ with tab2:
                 use_container_width=True, hide_index=True
             )
             
+        with col_decorr:
             st.subheader("Top 5 Décorrélés (1Y)")
             st.dataframe(
                 df_bottom5,
