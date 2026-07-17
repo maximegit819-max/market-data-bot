@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from sqlalchemy import create_engine, text
 
 st.set_page_config(page_title="Dashboard Structuration", layout="wide")
@@ -162,9 +163,10 @@ with tab2:
             df_vol = load_vol_term_structure(ticker_choisi)
             
             if not df_vol.empty:
-                # On formate les données pour l'histogramme Streamlit
+                # On formate les données
+                horizons = ["1 Mois", "6 Mois", "1 An", "5 Ans"]
                 vol_data = pd.DataFrame({
-                    "Horizon": ["1 Mois", "6 Mois", "1 An", "5 Ans"],
+                    "Horizon": horizons,
                     "Volatilité (%)": [
                         df_vol.iloc[0]['vol_1m_pct'],
                         df_vol.iloc[0]['vol_6m_pct'],
@@ -172,8 +174,34 @@ with tab2:
                         df_vol.iloc[0]['vol_5y_pct']
                     ]
                 })
-                # On met "Horizon" en index pour qu'il serve d'axe X
-                st.bar_chart(vol_data.set_index("Horizon"), color="#681da8", height=200)
+                
+                # Création d'un graphique Plotly sur-mesure et professionnel
+                fig = px.bar(
+                    vol_data, 
+                    x="Horizon", 
+                    y="Volatilité (%)",
+                    text="Volatilité (%)", # Affiche le pourcentage sur les barres
+                    color_discrete_sequence=["#681da8"]
+                )
+                
+                # Forçage de l'ordre chronologique exact et nettoyage du design
+                fig.update_layout(
+                    xaxis={'categoryorder':'array', 'categoryarray': horizons},
+                    xaxis_title=None,
+                    yaxis_title=None,
+                    margin=dict(l=0, r=0, t=20, b=0),
+                    height=250,
+                    plot_bgcolor="rgba(0,0,0,0)", # Fond transparent
+                    paper_bgcolor="rgba(0,0,0,0)"
+                )
+                fig.update_traces(
+                    texttemplate='%{text:.1f}%', 
+                    textposition='outside',
+                    marker_line_color="#4a157a", # Bordure légèrement plus foncée
+                    marker_line_width=1
+                )
+                
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
             
             st.divider()
             
