@@ -47,8 +47,19 @@ def load_screener_data():
 
 @st.cache_data(ttl=3600)
 def load_stock_history(ticker):
-    """Récupère l'historique des prix pour le graphique"""
-    query = f"SELECT date_prix, prix_cloture FROM historical_price WHERE ticker_yahoo = '{ticker}' ORDER BY date_prix ASC"
+    """Récupère l'historique des prix ET les moyennes mobiles pour le graphique"""
+    query = f"""
+    SELECT 
+        h.date_prix, 
+        h.prix_cloture AS "Prix", 
+        m.sma_6m AS "Moyenne 6M", 
+        m.sma_1y AS "Moyenne 1Y"
+    FROM historical_price h
+    LEFT JOIN vue_moyennes_mobiles_standard m 
+           ON h.ticker_yahoo = m.ticker_yahoo AND h.date_prix = m.date_prix
+    WHERE h.ticker_yahoo = '{ticker}' 
+    ORDER BY h.date_prix ASC
+    """
     with engine.connect() as conn:
         df = pd.read_sql(text(query), conn)
         df.set_index('date_prix', inplace=True)
@@ -112,15 +123,31 @@ with tab2:
     nom_choisi = st.selectbox("Rechercher une entreprise :", liste_noms)
     
     if nom_choisi:
-        ticker_choisi = df_screener[df_screener['Sous-Jacent'] == nom_choisi]['Ticker'].iloc[0]
+        # On extrait la ligne spécifique à l'action choisie depuis le dataframe du screener
+        infos_action = df_screener[df_screener['Sous-Jacent'] == nom_choisi].iloc[0]
+        ticker_choisi = infos_action['Ticker']
         
         st.divider()
+        
+        # --- NOUVEAU : Bandeau de Synthèse (KPIs) ---
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1.metric("Prix Actuel", f"{infos_action['Prix Clôture']:.2f}", f"{infos_action['Perf 1J (%)']:.2f}%")
+        kpi2.metric("Performance 1Y", f"{infos_action['Perf 1Y (%)']:.2f}%")
+        kpi3.metric("Volatilité 1Y", f"{infos_action['Volatilité 1Y (%)']:.2f}%")
+        kpi4.metric("Drawdown 1Y", f"{infos_action['Drawdown 1Y (%)']:.2f}%")
+        
+        st.divider()
+        # --------------------------------------------
+
         col_gauche, col_droite = st.columns([2, 1]) 
         
         with col_gauche:
-            st.subheader(f"Historique des prix - {nom_choisi}")
+            st.subheader("Historique et Tendance")
             df_historique = load_stock_history(ticker_choisi)
-            st.line_chart(df_historique['prix_cloture'], color="#0b57d0", height=400)
+            
+            # --- NOUVEAU : Graphique avec les Moyennes Mobiles (et couleurs personnalisées) ---
+            # Bleu pour le prix, Orange pour la SMA 6M, Vert pour la SMA 1Y
+            st.line_chart(df_historique, color=["#0b57d0", "#f9ab00", "#146c2e"], height=400)
             
         with col_droite:
             df_top5, df_bottom5 = load_correlations(ticker_choisi)
