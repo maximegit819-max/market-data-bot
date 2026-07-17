@@ -5,7 +5,6 @@ from sqlalchemy import create_engine, text
 st.set_page_config(page_title="Dashboard Structuration", layout="wide")
 
 st.title("Screener Quantitatif & Analyse")
-st.markdown("Données de marché en direct de **Supabase**.")
 
 @st.cache_resource
 def init_connection():
@@ -57,17 +56,25 @@ def load_stock_history(ticker):
 
 @st.cache_data(ttl=3600)
 def load_correlations(ticker):
-    """Récupère le Top 5 et Flop 5 des actions corrélées"""
+    """Récupère le Top 5 et Flop 5 avec la volatilité associée"""
     query = f"""
-    SELECT actif_2 AS "Ticker", nom_actif_2 AS "Entreprise", corr_1y AS "Corrélation (1 An)"
-    FROM vue_correlation_standard WHERE actif_1 = '{ticker}' AND corr_1y IS NOT NULL
-    UNION
-    SELECT actif_1 AS "Ticker", nom_actif_1 AS "Entreprise", corr_1y AS "Corrélation (1 An)"
-    FROM vue_correlation_standard WHERE actif_2 = '{ticker}' AND corr_1y IS NOT NULL
+    WITH correlations AS (
+        SELECT actif_2 AS ticker, nom_actif_2 AS nom, corr_1y AS correlation
+        FROM vue_correlation_standard WHERE actif_1 = '{ticker}' AND corr_1y IS NOT NULL
+        UNION
+        SELECT actif_1 AS ticker, nom_actif_1 AS nom, corr_1y AS correlation
+        FROM vue_correlation_standard WHERE actif_2 = '{ticker}' AND corr_1y IS NOT NULL
+    )
+    SELECT 
+        c.ticker AS "Ticker", 
+        c.nom AS "Entreprise", 
+        c.correlation AS "Corrélation (1 An)",
+        v.vol_1y_pct AS "Volatilité 1Y (%)"
+    FROM correlations c
+    LEFT JOIN vue_volatilite_standard v ON c.ticker = v.ticker_yahoo
     """
     with engine.connect() as conn:
         df = pd.read_sql(text(query), conn)
-        # Tri et sélection via Pandas
         top_5 = df.nlargest(5, 'Corrélation (1 An)')
         bottom_5 = df.nsmallest(5, 'Corrélation (1 An)')
         return top_5, bottom_5
@@ -85,7 +92,7 @@ with tab1:
         st.metric(label="Plus forte baisse (1J)", value=df_screener.iloc[-1]['Sous-Jacent'], delta=f"{df_screener.iloc[-1]['Perf 1J (%)']:.2f}%")
     with col3:
         pire_dd = df_screener.sort_values(by="Drawdown 1Y (%)").iloc[0]
-        st.metric(label="Plus gros krach actuel (1Y)", value=pire_dd['Sous-Jacent'], delta=f"{pire_dd['Drawdown 1Y (%)']:.2f}%")
+        st.metric(label="Pire Drawdown (1Y)", value=pire_dd['Sous-Jacent'], delta=f"{pire_dd['Drawdown 1Y (%)']:.2f}%")
 
     st.dataframe(
         df_screener,
@@ -102,10 +109,9 @@ with tab1:
 
 with tab2:
     liste_noms = df_screener['Sous-Jacent'].tolist()
-    nom_choisi = st.selectbox("Sélectionnez une entreprise à analyser :", liste_noms)
+    nom_choisi = st.selectbox("Rechercher une entreprise :", liste_noms)
     
     if nom_choisi:
-        # On retrouve le ticker correspondant au nom choisi
         ticker_choisi = df_screener[df_screener['Sous-Jacent'] == nom_choisi]['Ticker'].iloc[0]
         
         st.divider()
@@ -122,13 +128,19 @@ with tab2:
             st.subheader("Top 5 Corrélés (1Y)")
             st.dataframe(
                 df_top5,
-                column_config={"Corrélation (1 An)": st.column_config.NumberColumn(format="%.2f")},
+                column_config={
+                    "Corrélation (1 An)": st.column_config.NumberColumn(format="%.2f"),
+                    "Volatilité 1Y (%)": st.column_config.NumberColumn(format="%.2f %%")
+                },
                 use_container_width=True, hide_index=True
             )
             
             st.subheader("Top 5 Décorrélés (1Y)")
             st.dataframe(
                 df_bottom5,
-                column_config={"Corrélation (1 An)": st.column_config.NumberColumn(format="%.2f")},
+                column_config={
+                    "Corrélation (1 An)": st.column_config.NumberColumn(format="%.2f"),
+                    "Volatilité 1Y (%)": st.column_config.NumberColumn(format="%.2f %%")
+                },
                 use_container_width=True, hide_index=True
             )
