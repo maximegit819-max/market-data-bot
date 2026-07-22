@@ -303,7 +303,5 @@ with tab3:
         if not df_comparison.empty:
             st.line_chart(df_comparison, color=["#1e3a8a", "#f9ab00"], height=450)
             
-            # Petit bloc d'explication pédagogique pour les utilisateurs
-            st.caption("ℹ️ *Le graphique est normalisé en 'Base 100'. Cela signifie que le prix des deux actions est ramené à 100 le premier jour de la période sélectionnée pour pouvoir comparer leur performance absolue de manière juste.*")
         else:
             st.warning("Aucune donnée commune trouvée pour cette période.")
