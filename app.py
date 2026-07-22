@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from sqlalchemy import create_engine, text
+import datetime
 
 st.set_page_config(page_title="Dashboard Structuration", layout="wide")
 
@@ -47,8 +48,7 @@ def load_screener_data():
         return pd.read_sql(text(query), conn)
 
 @st.cache_data(ttl=3600)
-def load_stock_history(ticker):
-    """Récupère l'historique des prix ET les moyennes mobiles pour le graphique"""
+def load_stock_history(ticker, date_debut, date_fin):
     query = f"""
     SELECT 
         h.date_prix, 
@@ -59,6 +59,8 @@ def load_stock_history(ticker):
     LEFT JOIN vue_moyennes_mobiles_standard m 
            ON h.ticker_yahoo = m.ticker_yahoo AND h.date_prix = m.date_prix
     WHERE h.ticker_yahoo = '{ticker}' 
+      AND h.date_prix >= '{date_debut}' 
+      AND h.date_prix <= '{date_fin}'
     ORDER BY h.date_prix ASC
     """
     with engine.connect() as conn:
@@ -68,7 +70,6 @@ def load_stock_history(ticker):
 
 @st.cache_data(ttl=3600)
 def load_vol_term_structure(ticker):
-    """Récupère les différents horizons de volatilité pour l'action"""
     query = f"""
     SELECT vol_1m_pct, vol_6m_pct, vol_1y_pct, vol_5y_pct
     FROM vue_volatilite_standard
@@ -79,7 +80,6 @@ def load_vol_term_structure(ticker):
 
 @st.cache_data(ttl=3600)
 def load_correlations(ticker):
-    """Récupère le Top 5 et Flop 5 avec la volatilité associée"""
     query = f"""
     WITH correlations AS (
         SELECT actif_2 AS ticker, nom_actif_2 AS nom, corr_1y AS correlation
@@ -102,7 +102,37 @@ def load_correlations(ticker):
         bottom_5 = df.nsmallest(5, 'Corrélation (1 An)')
         return top_5, bottom_5
 
-tab1, tab2 = st.tabs(["Screener Global Market", "Fiche Analyse par Action"])
+@st.cache_data(ttl=3600)
+def load_comparison_data(ticker1, ticker2, nom1, nom2, date_debut, date_fin):
+    """Récupère et normalise les prix de deux actions pour les comparer (Base 100)"""
+    query = f"""
+    SELECT date_prix, ticker_yahoo, prix_cloture
+    FROM historical_price
+    WHERE ticker_yahoo IN ('{ticker1}', '{ticker2}')
+      AND date_prix >= '{date_debut}'
+      AND date_prix <= '{date_fin}'
+    ORDER BY date_prix ASC
+    """
+    with engine.connect() as conn:
+        df = pd.read_sql(text(query), conn)
+        if df.empty:
+            return pd.DataFrame()
+        
+        # On pivote le tableau pour avoir les dates en index et les tickers en colonnes
+        df_pivot = df.pivot(index='date_prix', columns='ticker_yahoo', values='prix_cloture')
+        
+        # On renomme les colonnes avec les vrais noms d'entreprises
+        df_pivot.rename(columns={ticker1: nom1, ticker2: nom2}, inplace=True)
+        
+        # Le secret : On divise chaque ligne par la toute première ligne (la date de début) et on multiplie par 100
+        df_normalized = (df_pivot / df_pivot.iloc[0]) * 100
+        return df_normalized
+
+# ==============================================================================
+# INTERFACE UTILISATEUR
+# ==============================================================================
+
+tab1, tab2, tab3 = st.tabs(["Screener Global Market", "Fiche Analyse par Action", "Comparateur"])
 
 with tab1:
     with st.spinner("Récupération des données marché..."):
@@ -132,16 +162,14 @@ with tab1:
 
 with tab2:
     liste_noms = df_screener['Sous-Jacent'].tolist()
-    nom_choisi = st.selectbox("Rechercher une entreprise :", liste_noms)
+    nom_choisi = st.selectbox("Rechercher une entreprise :", liste_noms, key="select_tab2")
     
     if nom_choisi:
-        # On extrait la ligne spécifique à l'action choisie depuis le dataframe du screener
         infos_action = df_screener[df_screener['Sous-Jacent'] == nom_choisi].iloc[0]
         ticker_choisi = infos_action['Ticker']
         
         st.divider()
         
-        # Bandeau de Synthèse (KPIs)
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         kpi1.metric("Prix Actuel", f"{infos_action['Prix Clôture']:.2f}", f"{infos_action['Perf 1J (%)']:.2f}%")
         kpi2.metric("Performance 1Y", f"{infos_action['Perf 1Y (%)']:.2f}%")
@@ -153,17 +181,31 @@ with tab2:
         col_gauche, col_droite = st.columns([2, 1]) 
         
         with col_gauche:
-            st.subheader("Historique et Tendance")
-            df_historique = load_stock_history(ticker_choisi)
-            st.line_chart(df_historique, color=["#0b57d0", "#f9ab00", "#146c2e"], height=400)
+            col_titre, col_calendrier = st.columns([1, 1])
+            with col_titre:
+                st.subheader("Historique et Tendance")
+            with col_calendrier:
+                date_fin_defaut = datetime.date.today()
+                date_debut_defaut = date_fin_defaut - datetime.timedelta(days=365)
+                
+                dates = st.date_input(
+                    "Période d'analyse :",
+                    value=(date_debut_defaut, date_fin_defaut),
+                    max_value=date_fin_defaut,
+                    key="dates_tab2"
+                )
+            
+            if len(dates) == 2:
+                df_historique = load_stock_history(ticker_choisi, dates[0], dates[1])
+                st.line_chart(df_historique, color=["#0b57d0", "#f9ab00", "#146c2e"], height=400)
+            else:
+                st.info("⏳ Veuillez sélectionner une date de fin sur le calendrier.")
             
         with col_droite:
-            # --- NOUVEAU : Histogramme de Term Structure de Volatilité ---
-            st.subheader("Term Structure (Volatilité)")
+            st.subheader("Structure (Vol)")
             df_vol = load_vol_term_structure(ticker_choisi)
             
             if not df_vol.empty:
-                # On formate les données
                 horizons = ["1 Mois", "6 Mois", "1 An", "5 Ans"]
                 vol_data = pd.DataFrame({
                     "Horizon": horizons,
@@ -175,39 +217,36 @@ with tab2:
                     ]
                 })
                 
-                # Création d'un graphique Plotly sur-mesure et professionnel
                 fig = px.bar(
                     vol_data, 
                     x="Horizon", 
                     y="Volatilité (%)",
                     text="Volatilité (%)",
-                    color_discrete_sequence=["#1e3a8a"] # Un bleu "Navy" professionnel et sobre
+                    color_discrete_sequence=["#1e3a8a"] 
                 )
                 
-                # Forçage de l'ordre chronologique exact et nettoyage du design
                 fig.update_layout(
                     xaxis={'categoryorder':'array', 'categoryarray': horizons, 'showgrid': False, 'zeroline': False},
-                    yaxis={'showticklabels': False, 'showgrid': False, 'zeroline': False}, # On cache l'axe Y pour un look minimaliste
+                    yaxis={'showticklabels': False, 'showgrid': False, 'zeroline': False, 'visible': False},
                     xaxis_title=None,
                     yaxis_title=None,
-                    margin=dict(l=0, r=0, t=30, b=0), # Marge haute augmentée pour que le texte respire
+                    margin=dict(l=0, r=0, t=30, b=0),
                     height=250,
-                    plot_bgcolor="rgba(0,0,0,0)", # Fond transparent
+                    plot_bgcolor="rgba(0,0,0,0)", 
                     paper_bgcolor="rgba(0,0,0,0)",
-                    bargap=0.5 # C'est ici qu'on affine considérablement la largeur des barres !
+                    bargap=0.5 
                 )
                 
                 fig.update_traces(
                     texttemplate='<b>%{text:.1f}%</b>', 
                     textposition='outside',
-                    textfont=dict(size=14, color="#334155"), # Texte plus grand et gris ardoise
-                    marker_line_width=0, # Design "flat" sans bordure
-                    cliponaxis=False # Empêche que le texte de la barre la plus haute soit coupé
+                    textfont=dict(size=14, color="#475569"), 
+                    marker_line_width=0, 
+                    cliponaxis=False 
                 )
                 
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         
-        # On sort des colonnes "gauche/droite" pour prendre toute la largeur de l'écran
         st.divider()
         
         df_top5, df_bottom5 = load_correlations(ticker_choisi)
@@ -235,3 +274,36 @@ with tab2:
                 },
                 use_container_width=True, hide_index=True
             )
+
+with tab3:
+    st.subheader("Comparateur de Performance (Base 100)")
+    
+    col_sel1, col_sel2, col_dates = st.columns([1.5, 1.5, 1])
+    
+    with col_sel1:
+        nom1 = st.selectbox("Actif n°1 :", liste_noms, index=0, key="select_comp1")
+    with col_sel2:
+        nom2 = st.selectbox("Actif n°2 :", liste_noms, index=1 if len(liste_noms) > 1 else 0, key="select_comp2")
+    with col_dates:
+        date_fin_comp = datetime.date.today()
+        date_debut_comp = date_fin_comp - datetime.timedelta(days=365)
+        dates_comp = st.date_input(
+            "Période :",
+            value=(date_debut_comp, date_fin_comp),
+            max_value=date_fin_comp,
+            key="dates_tab3"
+        )
+        
+    if nom1 and nom2 and len(dates_comp) == 2:
+        ticker1 = df_screener[df_screener['Sous-Jacent'] == nom1].iloc[0]['Ticker']
+        ticker2 = df_screener[df_screener['Sous-Jacent'] == nom2].iloc[0]['Ticker']
+        
+        df_comparison = load_comparison_data(ticker1, ticker2, nom1, nom2, dates_comp[0], dates_comp[1])
+        
+        if not df_comparison.empty:
+            st.line_chart(df_comparison, color=["#1e3a8a", "#f9ab00"], height=450)
+            
+            # Petit bloc d'explication pédagogique pour les utilisateurs
+            st.caption("ℹ️ *Le graphique est normalisé en 'Base 100'. Cela signifie que le prix des deux actions est ramené à 100 le premier jour de la période sélectionnée pour pouvoir comparer leur performance absolue de manière juste.*")
+        else:
+            st.warning("Aucune donnée commune trouvée pour cette période.")
