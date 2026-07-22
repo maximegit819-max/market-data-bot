@@ -17,7 +17,7 @@ def init_connection():
 
 engine = init_connection()
 
-@st.cache_data(ttl=3600) 
+@st.cache_data(ttl="12h") 
 def load_screener_data():
     query = """
     WITH latest_daily AS (
@@ -47,7 +47,7 @@ def load_screener_data():
     with engine.connect() as conn:
         return pd.read_sql(text(query), conn)
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl="12h")
 def load_stock_history(ticker, date_debut, date_fin):
     query = f"""
     SELECT 
@@ -68,7 +68,7 @@ def load_stock_history(ticker, date_debut, date_fin):
         df.set_index('date_prix', inplace=True)
         return df
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl="12h")
 def load_vol_term_structure(ticker):
     query = f"""
     SELECT vol_1m_pct, vol_6m_pct, vol_1y_pct, vol_5y_pct
@@ -102,7 +102,7 @@ def load_correlations(ticker):
         bottom_5 = df.nsmallest(5, 'Corrélation (1 An)')
         return top_5, bottom_5
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl="12h")
 def load_comparison_data(ticker1, ticker2, nom1, nom2, date_debut, date_fin):
     """Récupère et normalise les prix de deux actions pour les comparer (Base 100)"""
     query = f"""
