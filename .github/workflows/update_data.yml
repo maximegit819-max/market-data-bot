@@ -1,14 +1,24 @@
- - name: Installer Python
-   uses: actions/setup-python@v5
-   with:
-      python-version: '3.10'
+name: Mise a jour quotidienne des prix de marche
 
- - name: Installer les librairies
-   run: pip install -r requirements.txt
+on:
+  workflow_dispatch:
 
- - name: Lancer l'importation Yahoo Finance
-   env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-    run: python yahoo_update.py
+jobs:
+  run-python-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
 
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
+      - name: Installer les librairies
+        run: pip install -r requirements.txt
+
+      - name: Lancer l'importation Yahoo Finance
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python yahoo_update.py
