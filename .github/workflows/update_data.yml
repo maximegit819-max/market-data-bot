@@ -1,26 +1,17 @@
-name: Mise à jour des données
+steps:
+  - name: Récupérer le code
+    uses: actions/checkout@v4
 
-on:
-  schedule:
-    - cron: '17 23 * * *' 
-  workflow_dispatch: 
+  - name: Installer Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: '3.10'
 
-jobs:
-  update:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Récupérer le code
-        uses: actions/checkout@v3
-        
-      - name: Installer Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-          
-      - name: Installer les librairies
-        run: pip install -r requirements.txt
-        
-      - name: Lancer le script
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: python yahoo_update.py
+  - name: Installer les librairies
+    run: pip install -r requirements.txt
+
+  - name: Lancer l'importation Yahoo Finance
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    run: python yahoo_update.py
+
